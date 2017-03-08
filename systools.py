@@ -19,6 +19,9 @@ proc_fs = '/proc'
 processes = []
 
 class Process:
+    #IO stats
+    io_data_in_bytes = {'read':0,'write':0}
+
     #from /proc/<pid>/loginuid
     uid = None
 
@@ -79,14 +82,21 @@ class Process:
     def getProcessInfo(self,pid):
         loginuid = os.path.join(proc_fs,pid,"loginuid")
         stat = os.path.join(proc_fs,pid,"stat")
+        io = os.path.join(proc_fs,pid,"io")
         if os.path.exists(loginuid):
             with open(loginuid) as f:
                 self.uid = int(f.readline().rstrip('\n'))
             f.close()
+        if os.path.exists(io):
+            with open(io) as f:
+                contents = f.read().splitlines()
+                self.io_data_in_bytes['read'] = contents[4].split()[1]
+                self.io_data_in_bytes['write'] = contents[5].split()[1]
+            f.close()
         if os.path.exists(stat):
             #change to account for large files
-            with open(stat) as f:
-                contents = f.read().split()
+            with open(stat) as g:
+                contents = g.read().split()
                 self.pid = contents[0]
                 self.cmd = contents[1]
                 self.state = contents[2]
@@ -139,7 +149,7 @@ class Process:
                 self.env_start = contents[49]
                 self.env_end = contents[50]
                 self.exit_code = contents[51]
-            f.close()
+            g.close()
 
 for root, dirs, files in os.walk(proc_fs):
     for pid in dirs:
@@ -154,4 +164,15 @@ def ps():
         if process.uid == os.geteuid():
             print(pwd.getpwuid(process.uid)[0], process.pid, process.tty, process.start_time, process.cmd)
 
-ps()
+def get_open_files():
+    lsof = subprocess.Popen(['lsof'], stdout=subprocess.PIPE)
+    awk = subprocess.Popen(['awk', '$4 ~ /[0-9]+/'], stdin=lsof.stdout, stdout = subprocess.PIPE)
+    lsof.stdout.close()
+    print(awk.stdout.read().splitlines())
+    awk.stdout.close()
+
+def get_proc_io():
+    for process in processes:
+        if process.pid == '2536':
+            print(process.io_data_in_bytes)
+get_proc_io()
